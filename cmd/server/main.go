@@ -7,7 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/streadway/amqp"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func main() {
@@ -22,11 +24,24 @@ func main() {
 	}
 	fmt.Println("Connected to server")
 
+	chann, err := conn.Channel()
+	if err != nil {
+		log.Fatal("Failed to open a channel", err)
+		return
+	}
+	fmt.Println("Channel opened")
+
+	err = pubsub.PublishJSON(chann, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: true})
+	if err != nil {
+		log.Fatal("Failed to publish message", err)
+		return
+	}
+
 	go func() { //since we're blocking until signal, we don't need to defer conn.Close()
 		<-sigChan
 		fmt.Println("Shutting down server...")
 		conn.Close()
 		os.Exit(0)
 	}()
-	select {} //ensure we're blocking until all signals received
+	select {}
 }
