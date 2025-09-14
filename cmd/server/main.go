@@ -39,6 +39,23 @@ func main() {
 		return
 	}
 
+	ch, q, err := pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		pubsub.DurableQueue,
+	)
+
+	if err != nil {
+		log.Fatal("Failed to declare and bind queue", err)
+		return
+	}
+
+	fmt.Printf("Declared and bound queue %s\n", q.Name)
+
+	defer ch.Close()
+
 	go func() { //since we're blocking until signal, we don't need to defer conn.Close()
 		<-sigChan
 		fmt.Println("Shutting down server...")
@@ -69,11 +86,9 @@ func main() {
 			}
 		case "quit":
 			fmt.Println("Exiting...")
-			break
+			return
 		default:
 			fmt.Println("Unknown command:", cmd)
 		}
 	}
-
-	select {}
 }
