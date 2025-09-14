@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	fmt.Println("Starting Peril server...")
+	gamelogic.PrintServerHelp()
 	conStr := "amqp://guest:guest@localhost:5672/"
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -43,5 +45,35 @@ func main() {
 		conn.Close()
 		os.Exit(0)
 	}()
+
+	for {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
+			continue
+		}
+		cmd := words[0]
+		switch cmd {
+		case "pause":
+			err = pubsub.PublishJSON(chann, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: true})
+			if err != nil {
+				log.Println("Failed to publish message", err)
+			} else {
+				fmt.Println("Game paused")
+			}
+		case "resume":
+			err = pubsub.PublishJSON(chann, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: false})
+			if err != nil {
+				log.Println("Failed to publish message", err)
+			} else {
+				fmt.Println("Game resumed")
+			}
+		case "quit":
+			fmt.Println("Exiting...")
+			break
+		default:
+			fmt.Println("Unknown command:", cmd)
+		}
+	}
+
 	select {}
 }
