@@ -8,9 +8,12 @@ const (
 	PauseKey = "pause"
 
 	GameLogSlug = "game_logs"
+
+	DeadLetterQueue = "peril_dlq"
 )
 
 const (
-	ExchangePerilDirect = "peril_direct"
-	ExchangePerilTopic  = "peril_topic"
+	ExchangePerilDirect     = "peril_direct"
+	ExchangePerilTopic      = "peril_topic"
+	ExchangePerilDeadLetter = "peril_dlx"
 )

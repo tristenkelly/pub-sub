@@ -6,6 +6,7 @@ import (
 
 	"context"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -111,7 +112,7 @@ func DeclareAndBind(
 		isTransient,
 		isTransient,
 		false,
-		nil,
+		amqp.Table{"x-dead-letter-exchange": routing.ExchangePerilDeadLetter},
 	)
 	if err != nil {
 		chann.Close()
