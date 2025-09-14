@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"context"
 
@@ -15,13 +16,21 @@ const (
 	DurableQueue
 )
 
+type SimpleAckType int
+
+const (
+	Ack SimpleAckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func SubscribeJSON[T any](
 	conn *amqp.Connection,
 	exchange,
 	queueName,
 	key string,
 	queueType simpleQueueType, // an enum to represent "durable" or "transient"
-	handler func(T),
+	handler func(T) SimpleAckType,
 ) error {
 	chann, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -44,8 +53,17 @@ func SubscribeJSON[T any](
 		for d := range msgs {
 			var val T
 			if err := json.Unmarshal(d.Body, &val); err == nil {
-				handler(val)
-				d.Ack(false)
+				switch handler(val) {
+				case Ack:
+					d.Ack(false)
+					fmt.Println("Acked message")
+				case NackRequeue:
+					d.Nack(false, true)
+					fmt.Println("Nacked message, requeued")
+				case NackDiscard:
+					d.Nack(false, false)
+					fmt.Println("Nacked message, discarded")
+				}
 			}
 		}
 	}()
