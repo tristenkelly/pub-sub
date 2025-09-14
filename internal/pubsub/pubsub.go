@@ -15,6 +15,43 @@ const (
 	DurableQueue
 )
 
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType simpleQueueType, // an enum to represent "durable" or "transient"
+	handler func(T),
+) error {
+	chann, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+	msgs, err := chann.Consume(
+		q.Name,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		chann.Close()
+		return err
+	}
+	go func() {
+		for d := range msgs {
+			var val T
+			if err := json.Unmarshal(d.Body, &val); err == nil {
+				handler(val)
+				d.Ack(false)
+			}
+		}
+	}()
+	return nil
+}
+
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	data, err := json.Marshal(val)
 	if err != nil {
