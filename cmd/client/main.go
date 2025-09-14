@@ -18,6 +18,13 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
 	}
 }
 
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Printf("> ")
+		gs.HandleMove(move)
+	}
+}
+
 func main() {
 	fmt.Println("Starting Peril client...")
 	conStr := "amqp://guest:guest@localhost:5672/"
@@ -66,6 +73,19 @@ func main() {
 		return
 	}
 
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.ArmyMovesPrefix+"."+user,
+		routing.ArmyMovesPrefix+".*",
+		pubsub.TransientQueue,
+		handlerMove(gameState),
+	)
+	if err != nil {
+		log.Printf("error subscribing to JSON: %v", err)
+		return
+	}
+
 	for {
 		words := gamelogic.GetInput()
 		if len(words) == 0 {
@@ -74,9 +94,17 @@ func main() {
 		cmd := words[0]
 		switch cmd {
 		case "move":
-			_, err := gameState.CommandMove(words)
+			move, err := gameState.CommandMove(words)
 			if err != nil {
 				fmt.Printf("error executing move command: %v\n", err)
+			}
+			err = pubsub.PublishJSON(ch,
+				routing.ExchangePerilTopic,
+				routing.ArmyMovesPrefix+"."+user,
+				move,
+			)
+			if err != nil {
+				fmt.Printf("error publishing move command: %v\n", err)
 			}
 		case "spawn":
 			err := gameState.CommandSpawn(words)
