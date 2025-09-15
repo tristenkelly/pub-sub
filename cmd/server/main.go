@@ -13,6 +13,18 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func handlerLog(logCh *amqp.Channel) func(routing.GameLog) pubsub.SimpleAckType {
+	return func(entry routing.GameLog) pubsub.SimpleAckType {
+		defer fmt.Printf("> ")
+		err := gamelogic.WriteLog(entry)
+		if err != nil {
+			fmt.Printf("error writing log entry: %v\n", err)
+			return pubsub.NackRequeue
+		}
+		return pubsub.Ack
+	}
+}
+
 func main() {
 	fmt.Println("Starting Peril server...")
 	gamelogic.PrintServerHelp()
@@ -49,6 +61,19 @@ func main() {
 
 	if err != nil {
 		log.Fatal("Failed to declare and bind queue", err)
+		return
+	}
+
+	err = pubsub.SubscribeGob(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		pubsub.DurableQueue,
+		handlerLog(ch),
+	)
+	if err != nil {
+		log.Fatal("Failed to subscribe to gob", err)
 		return
 	}
 

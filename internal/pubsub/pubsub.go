@@ -1,6 +1,8 @@
 package pubsub
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 
@@ -130,4 +132,74 @@ func DeclareAndBind(
 		return nil, amqp.Queue{}, err
 	}
 	return chann, queue, nil
+}
+
+func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(val); err != nil {
+		return err
+	}
+	err := ch.PublishWithContext(
+		context.Background(),
+		exchange,
+		key,
+		false,
+		false,
+		amqp.Publishing{
+			Body:        buf.Bytes(),
+			ContentType: "application/gob",
+		},
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType simpleQueueType,
+	handler func(T) SimpleAckType,
+) error {
+	chann, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+	msgs, err := chann.Consume(
+		q.Name,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		chann.Close()
+		return err
+	}
+	go func() {
+		for d := range msgs {
+			var val T
+			dec := gob.NewDecoder(bytes.NewReader(d.Body))
+			if err := dec.Decode(&val); err == nil {
+				switch handler(val) {
+				case Ack:
+					d.Ack(false)
+					fmt.Println("Acked message")
+				case NackRequeue:
+					d.Nack(false, true)
+					fmt.Println("Nacked message, requeued")
+				case NackDiscard:
+					d.Nack(false, false)
+					fmt.Println("Nacked message, discarded")
+				}
+			}
+		}
+	}()
+	return nil
 }
