@@ -19,7 +19,7 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.Sim
 	}
 }
 
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.SimpleAckType {
+func handlerMove(ch *amqp.Channel, gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.SimpleAckType {
 	return func(move gamelogic.ArmyMove) pubsub.SimpleAckType {
 		defer fmt.Printf("> ")
 		outcome := gs.HandleMove(move)
@@ -29,6 +29,38 @@ func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.Simple
 		case gamelogic.MoveOutcomeSamePlayer:
 			return pubsub.NackDiscard
 		case gamelogic.MoveOutcomeMakeWar:
+			err := pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilTopic,
+				routing.WarRecognitionsPrefix+"."+gs.Player.Username,
+				gamelogic.RecognitionOfWar{
+					Attacker: gs.Player,
+					Defender: move.Player,
+				},
+			)
+			if err != nil {
+				fmt.Printf("error publishing war declaration: %v\n", err)
+				return pubsub.NackRequeue
+			}
+			return pubsub.Ack
+		default:
+			return pubsub.NackDiscard
+		}
+	}
+}
+
+func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.SimpleAckType {
+	return func(decl gamelogic.RecognitionOfWar) pubsub.SimpleAckType {
+		defer fmt.Printf("> ")
+		outcome, _, _ := gs.HandleWar(decl)
+		switch outcome {
+		case gamelogic.WarOutcomeNotInvolved:
+			return pubsub.NackRequeue
+		case gamelogic.WarOutcomeNoUnits:
+			return pubsub.NackDiscard
+		case gamelogic.WarOutcomeYouWon:
+			return pubsub.Ack
+		case gamelogic.WarOutcomeDraw:
 			return pubsub.Ack
 		default:
 			return pubsub.NackDiscard
@@ -90,7 +122,20 @@ func main() {
 		routing.ArmyMovesPrefix+"."+user,
 		routing.ArmyMovesPrefix+".*",
 		pubsub.TransientQueue,
-		handlerMove(gameState),
+		handlerMove(ch, gameState),
+	)
+	if err != nil {
+		log.Printf("error subscribing to JSON: %v", err)
+		return
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.WarRecognitionsPrefix,
+		routing.WarRecognitionsPrefix+".*",
+		pubsub.DurableQueue,
+		handlerWar(gameState),
 	)
 	if err != nil {
 		log.Printf("error subscribing to JSON: %v", err)
