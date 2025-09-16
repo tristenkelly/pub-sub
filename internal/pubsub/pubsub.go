@@ -169,6 +169,11 @@ func SubscribeGob[T any](
 	if err != nil {
 		return err
 	}
+	err = chann.Qos(10, 0, false)
+	if err != nil {
+		fmt.Printf("error setting QoS: %v\n", err)
+		return err
+	}
 	msgs, err := chann.Consume(
 		q.Name,
 		"",
